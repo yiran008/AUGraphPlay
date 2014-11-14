@@ -37,6 +37,7 @@ static OSStatus	performRender (void                         *inRefCon,
     CAStreamBasicDescription mClientFormat;
     AUGraph   mGraph;
     AudioUnit mOutPut;
+    AudioUnit reverbPut;
 }
 - (id)init
 {
@@ -50,7 +51,8 @@ static OSStatus	performRender (void                         *inRefCon,
 
 -(void)initializeAUGraph
 {
-    AUNode outputNode;
+    AUNode ioNode;
+    AUNode reverbNode;
     
     OSStatus result = noErr;
     
@@ -58,29 +60,56 @@ static OSStatus	performRender (void                         *inRefCon,
     
     CAComponentDescription output_desc(kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple);
     
-    result = AUGraphAddNode(mGraph, &output_desc, &outputNode);
+    CAComponentDescription reverb_desc(kAudioUnitType_Effect, kAudioUnitSubType_Reverb2, kAudioUnitManufacturer_Apple);
+    
+    result = AUGraphAddNode(mGraph, &output_desc, &ioNode);
+    result = AUGraphAddNode(mGraph, &reverb_desc, &reverbNode);
+    
     result = AUGraphOpen(mGraph);
-    result = AUGraphNodeInfo(mGraph, outputNode, NULL, &mOutPut);
+    result = AUGraphNodeInfo(mGraph, ioNode, NULL, &mOutPut);
+    result = AUGraphNodeInfo(mGraph, reverbNode, NULL, &reverbPut);
 
     UInt32 one = 1;
     result = AudioUnitSetProperty(mOutPut, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &one, sizeof(one));
     result = AudioUnitSetProperty(mOutPut, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &one, sizeof(one));
     
-    CAStreamBasicDescription ioFormat = CAStreamBasicDescription(44100, 1, CAStreamBasicDescription::kPCMFormatFloat32, false);
-    result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &ioFormat, sizeof(ioFormat));
-    result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &ioFormat, sizeof(ioFormat));
-    UInt32 maxFramesPerSlice = 4096;
-    XThrowIfError(AudioUnitSetProperty(mOutPut, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFramesPerSlice, sizeof(UInt32)), "couldn't set max frames per slice on AURemoteIO");
+
+    //CAStreamBasicDescription ioFormat = CAStreamBasicDescription(44100, 1, CAStreamBasicDescription::kPCMFormatFloat32, false);
+    size_t bytesPerSample = sizeof (AudioUnitSampleType);
+    AudioStreamBasicDescription     stereoStreamFormat;
+    // Fill the application audio format struct's fields to define a linear PCM,
+    //        stereo, noninterleaved stream at the hardware sample rate.
+    stereoStreamFormat.mFormatID          = kAudioFormatLinearPCM;
+    stereoStreamFormat.mFormatFlags       = kAudioFormatFlagsNativeFloatPacked | kAudioFormatFlagIsNonInterleaved;
+    stereoStreamFormat.mBytesPerPacket    = bytesPerSample;
+    stereoStreamFormat.mFramesPerPacket   = 1;
+    stereoStreamFormat.mBytesPerFrame     = bytesPerSample;
+    stereoStreamFormat.mChannelsPerFrame  = 2;                    // 2 indicates stereo
+    stereoStreamFormat.mBitsPerChannel    = 8 * bytesPerSample;
+    stereoStreamFormat.mSampleRate        = 44100.0;
+    result = AudioUnitSetProperty(
+                                   reverbPut,
+                                   kAudioUnitProperty_StreamFormat,
+                                   kAudioUnitScope_Output,
+                                   0,
+                                   &stereoStreamFormat,
+                                   sizeof (stereoStreamFormat)
+                                   );
+    result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &stereoStreamFormat, sizeof(stereoStreamFormat));
+    result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &stereoStreamFormat, sizeof(stereoStreamFormat));
+    AUGraphConnectNodeInput(mGraph, reverbNode, 0, ioNode, 0);
+    AUGraphConnectNodeInput(mGraph,
+                            ioNode,
+                            1,
+                            reverbNode,
+                            0);
+    cd.rioUnit = reverbPut;
     
-    // Get the property value back from AURemoteIO. We are going to use this value to allocate buffers accordingly
-    UInt32 propSize = sizeof(UInt32);
-    XThrowIfError(AudioUnitGetProperty(mOutPut, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFramesPerSlice, &propSize), "couldn't get max frames per slice on AURemoteIO");
-    cd.rioUnit = mOutPut;
-    AURenderCallbackStruct renderCallback;
-    renderCallback.inputProc = performRender;
-    renderCallback.inputProcRefCon = NULL;
-    //AudioUnitSetProperty(mOutPut, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &renderCallback, sizeof(renderCallback));
-    AUGraphSetNodeInputCallback(mGraph, outputNode, 0, &renderCallback);
+//    AURenderCallbackStruct renderCallback;
+//    renderCallback.inputProc = &performRender;
+//    renderCallback.inputProcRefCon = NULL;
+//    
+//    AUGraphSetNodeInputCallback(mGraph, reverbNode, 0, &renderCallback);
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
 }
@@ -104,6 +133,11 @@ static OSStatus	performRender (void                         *inRefCon,
     {
         result = AUGraphStop(mGraph);
     }
+}
+
+-(void)dealloc
+{
+    DisposeAUGraph(mGraph);
 }
 
 @end
