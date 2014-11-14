@@ -75,12 +75,17 @@ static OSStatus	performRender (void                         *inRefCon,
     // Get the property value back from AURemoteIO. We are going to use this value to allocate buffers accordingly
     UInt32 propSize = sizeof(UInt32);
     XThrowIfError(AudioUnitGetProperty(mOutPut, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &maxFramesPerSlice, &propSize), "couldn't get max frames per slice on AURemoteIO");
-    cd.rioUnit = mOutPut;
-    AURenderCallbackStruct renderCallback;
-    renderCallback.inputProc = performRender;
-    renderCallback.inputProcRefCon = NULL;
-    //AudioUnitSetProperty(mOutPut, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &renderCallback, sizeof(renderCallback));
-    AUGraphSetNodeInputCallback(mGraph, outputNode, 0, &renderCallback);
+//    cd.rioUnit = mOutPut;
+//    AURenderCallbackStruct renderCallback;
+//    renderCallback.inputProc = performRender;
+//    renderCallback.inputProcRefCon = NULL;
+//    //AudioUnitSetProperty(mOutPut, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &renderCallback, sizeof(renderCallback));
+//    AUGraphSetNodeInputCallback(mGraph, outputNode, 0, &renderCallback);
+    AUGraphConnectNodeInput(mGraph,
+                            outputNode,
+                            1,
+                            outputNode,
+                            0);
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
 }
