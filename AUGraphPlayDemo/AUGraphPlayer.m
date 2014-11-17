@@ -7,11 +7,7 @@
 //
 
 #import "AUGraphPlayer.h"
-#import <AudioToolbox/AudioToolbox.h>
-#import <AVFoundation/AVFoundation.h>
-#import "CAStreamBasicDescription.h"
-#import "CAComponentDescription.h"
-#import "CAXException.h"
+
 struct CallbackData {
     AudioUnit               rioUnit;
     CallbackData(): rioUnit(NULL) {}
@@ -36,7 +32,6 @@ static OSStatus	performRender (void                         *inRefCon,
 {
     CAStreamBasicDescription mClientFormat;
     AUGraph   mGraph;
-    AudioUnit mOutPut;
     AudioUnit reverbPut;
 }
 - (id)init
@@ -113,6 +108,19 @@ static OSStatus	performRender (void                         *inRefCon,
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
 }
+-(AudioUnitParameterValue)getValueForParamId:(AudioUnitParameterID)paramId
+{
+    AudioUnitParameterValue value = 0;
+    
+    AudioUnitGetParameter(reverbPut, paramId, kAudioUnitScope_Global, 0, &value);
+    
+    return value;
+}
+
+-(void)setValue:(AudioUnitParameterValue)value forParamId:(AudioUnitParameterID)paramId
+{
+    AudioUnitSetParameter(reverbPut, paramId, kAudioUnitScope_Global, 0, value, 0);
+}
 
 -(void)start
 {
@@ -134,6 +142,7 @@ static OSStatus	performRender (void                         *inRefCon,
         result = AUGraphStop(mGraph);
     }
 }
+
 
 -(void)dealloc
 {
