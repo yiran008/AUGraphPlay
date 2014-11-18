@@ -7,30 +7,11 @@
 //
 
 #import "AUGraphPlayer.h"
+#define Out 0
 
-struct CallbackData {
-    AudioUnit               rioUnit;
-    CallbackData(): rioUnit(NULL) {}
-} cd;
-
-static OSStatus	performRender (void                         *inRefCon,
-                               AudioUnitRenderActionFlags 	*ioActionFlags,
-                               const AudioTimeStamp 		*inTimeStamp,
-                               UInt32 						inBusNumber,
-                               UInt32 						inNumberFrames,
-                               AudioBufferList              *ioData)
-{
-    OSStatus err = noErr;
-        // we are calling AudioUnitRender on the input bus of AURemoteIO
-        // this will store the audio data captured by the microphone in ioData
-        err = AudioUnitRender(cd.rioUnit, ioActionFlags, inTimeStamp, 1, inNumberFrames, ioData);
-    
-    return err;
-}
 @implementation AUGraphPlayer
 
 {
-    CAStreamBasicDescription mClientFormat;
     AudioStreamBasicDescription     stereoStreamFormat;
     AUGraph   mGraph;
     AudioUnit reverbPut;
@@ -43,7 +24,7 @@ static OSStatus	performRender (void                         *inRefCon,
     self = [super init];
     if (self)
     {
-        //[self initializeAudioSession];
+        [self initializeAudioSession];
         MaxSampleTime = 0.0;
         [self initializeAUGraph];
     }
@@ -117,33 +98,45 @@ static OSStatus	performRender (void                         *inRefCon,
 
 -(void)initializeAUGraph
 {
+#if Out
     AUNode ioNode;
+#else
+    AUNode gioNode;
+#endif
     AUNode reverbNode;
     AUNode playNode;
-    //AUNode gioNode;
     
     OSStatus result = noErr;
     
     result = NewAUGraph(&mGraph);
-    
+#if Out
     CAComponentDescription output_desc(kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple);
-    
+#else
+    CAComponentDescription gout_desc(kAudioUnitType_Output, kAudioUnitSubType_GenericOutput, kAudioUnitManufacturer_Apple);
+#endif
     CAComponentDescription reverb_desc(kAudioUnitType_Effect, kAudioUnitSubType_Reverb2, kAudioUnitManufacturer_Apple);
     
     CAComponentDescription play_desc(kAudioUnitType_Generator, kAudioUnitSubType_AudioFilePlayer, kAudioUnitManufacturer_Apple);
     
-    //CAComponentDescription gout_desc(kAudioUnitType_Output, kAudioUnitSubType_GenericOutput, kAudioUnitManufacturer_Apple);
     
+#if Out
     result = AUGraphAddNode(mGraph, &output_desc, &ioNode);
+#else
+    result = AUGraphAddNode(mGraph, &gout_desc, &gioNode);
+#endif
     result = AUGraphAddNode(mGraph, &reverb_desc, &reverbNode);
     result = AUGraphAddNode(mGraph, &play_desc, &playNode);
-    //result = AUGraphAddNode(mGraph, &gout_desc, &gioNode);
+    
     
     result = AUGraphOpen(mGraph);
+#if Out
     result = AUGraphNodeInfo(mGraph, ioNode, NULL, &mOutPut);
+#else
+    result = AUGraphNodeInfo(mGraph, gioNode, NULL, &mGIO);
+#endif
     result = AUGraphNodeInfo(mGraph, reverbNode, NULL, &reverbPut);
     result = AUGraphNodeInfo(mGraph, playNode, NULL, &playUnit);
-    //result = AUGraphNodeInfo(mGraph, gioNode, NULL, &mGIO);
+    
 
     size_t bytesPerSample = sizeof (AudioUnitSampleType);
     // Fill the application audio format struct's fields to define a linear PCM,
@@ -172,21 +165,17 @@ static OSStatus	performRender (void                         *inRefCon,
                                   &stereoStreamFormat,
                                   sizeof (stereoStreamFormat)
                                   );
-
+#if Out
     AUGraphConnectNodeInput(mGraph, reverbNode, 0, ioNode, 0);
-    //AUGraphConnectNodeInput(mGraph, reverbNode, 0, gioNode, 0);
+#else
+    AUGraphConnectNodeInput(mGraph, reverbNode, 0, gioNode, 0);
+#endif
     AUGraphConnectNodeInput(mGraph,
                             playNode,
                             0,
                             reverbNode,
                             0);
-    cd.rioUnit = reverbPut;
     
-//    AURenderCallbackStruct renderCallback;
-//    renderCallback.inputProc = &performRender;
-//    renderCallback.inputProcRefCon = NULL;
-//    
-//    AUGraphSetNodeInputCallback(mGraph, reverbNode, 0, &renderCallback);
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
 }
@@ -224,10 +213,6 @@ static OSStatus	performRender (void                         *inRefCon,
     size = sizeof(_audioFileID);
     ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_AudioFile, &size, &_audioFileID);
     
-    AudioStreamBasicDescription fileASBD;
-    size = sizeof(fileASBD);
-    err = AudioFileGetProperty(_audioFileID, kAudioFilePropertyDataFormat, &size, &fileASBD);
-    
     SInt64 fileLengthFrames;
     size = sizeof(SInt64);
     err = ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_FileLengthFrames, &size, &fileLengthFrames);
@@ -264,8 +249,9 @@ static OSStatus	performRender (void                         *inRefCon,
     err = AudioUnitSetProperty(playUnit,
                                kAudioUnitProperty_ScheduleStartTimeStamp, kAudioUnitScope_Global, 0,
                                &theTimeStamp, sizeof(theTimeStamp));
-    
-    //[self startGenerate];
+#if !Out
+    [self startGenerate];
+#endif
 
 }
 
@@ -375,8 +361,6 @@ static OSStatus	performRender (void                         *inRefCon,
         AudioUnitRender(mGIO,&flags,&inTimeStamp,busNumber,numberFrames,bufferList);
         
         ExtAudioFileWrite(extAudioFile, numberFrames, bufferList);
-        free(bufferList);
-        
     }
     OSStatus status = ExtAudioFileDispose(extAudioFile);
     printf("OSStatus(ExtAudioFileDispose): %ld\n", status);
