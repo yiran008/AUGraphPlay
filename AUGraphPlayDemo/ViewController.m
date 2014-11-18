@@ -31,6 +31,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.player = [[AUGraphPlayer alloc]init];
+    self.player.outputPath = self.fileUrl;
     [self updateSliderValue];
     [self updateLabels];
     // Do any additional setup after loading the view, typically from a nib.
@@ -122,6 +123,9 @@
     [self updateLabels];
 
 }
+- (IBAction)play:(id)sender {
+    [self.player play];
+}
 - (IBAction)reset:(id)sender {
     AudioUnitParameterValue value = 0.f;
     [self.player setValue:value forParamId:kReverb2Param_DryWetMix];
@@ -147,5 +151,6 @@
 - (IBAction)stop:(id)sender {
     [self.player stop];
 }
+
 
 @end

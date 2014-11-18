@@ -17,8 +17,10 @@
 {
     AudioUnit mOutPut;
 }
+@property (nonatomic, strong)NSURL *outputPath;
 -(void)start;
 -(void)stop;
+-(void)play;
 -(AudioUnitParameterValue)getValueForParamId:(AudioUnitParameterID)paramId;
 -(void)setValue:(AudioUnitParameterValue)value forParamId:(AudioUnitParameterID)paramId;
 @end

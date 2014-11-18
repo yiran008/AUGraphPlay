@@ -18,6 +18,11 @@
     AudioUnit playUnit;
     AudioUnit mGIO;
     Float64 MaxSampleTime;
+    
+    AUGraph   playGraph;
+    AudioUnit playerUnit;
+    AudioUnit playIOUnit;
+    AudioUnit playReverbUnit;
 }
 - (id)init
 {
@@ -27,6 +32,7 @@
         [self initializeAudioSession];
         MaxSampleTime = 0.0;
         [self initializeAUGraph];
+        [self initializeplayAUGraph];
     }
     return self;
 }
@@ -180,11 +186,118 @@
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
 }
+
+- (void)initializeplayAUGraph
+{
+    AUNode ioNode;
+    AUNode playNode;
+    AUNode reverbNode;
+    OSStatus result = noErr;
+    
+    result = NewAUGraph(&playGraph);
+    
+    CAComponentDescription output_desc(kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple);
+    CAComponentDescription reverb_desc(kAudioUnitType_Effect, kAudioUnitSubType_Reverb2, kAudioUnitManufacturer_Apple);
+    CAComponentDescription play_desc(kAudioUnitType_Generator, kAudioUnitSubType_AudioFilePlayer, kAudioUnitManufacturer_Apple);
+    
+    
+    result = AUGraphAddNode(playGraph, &output_desc, &ioNode);
+    result = AUGraphAddNode(playGraph, &play_desc, &playNode);
+    result = AUGraphAddNode(playGraph, &reverb_desc, &reverbNode);
+    
+    result = AUGraphOpen(playGraph);
+    result = AUGraphNodeInfo(playGraph, ioNode, NULL, &playIOUnit);
+    result = AUGraphNodeInfo(playGraph, playNode, NULL, &playerUnit);
+    result = AUGraphNodeInfo(playGraph, reverbNode, NULL, &playReverbUnit);
+    result = AudioUnitSetProperty(
+                                  playReverbUnit,
+                                  kAudioUnitProperty_StreamFormat,
+                                  kAudioUnitScope_Output,
+                                  0,
+                                  &stereoStreamFormat,
+                                  sizeof (stereoStreamFormat)
+                                  );
+    result = AudioUnitSetProperty(
+                                  playerUnit,
+                                  kAudioUnitProperty_StreamFormat,
+                                  kAudioUnitScope_Output,
+                                  0,
+                                  &stereoStreamFormat,
+                                  sizeof (stereoStreamFormat)
+                                  );
+    AUGraphConnectNodeInput(playGraph, reverbNode, 0, ioNode, 0);
+    AUGraphConnectNodeInput(playGraph,
+                            playNode,
+                            0,
+                            reverbNode,
+                            0);
+    
+    result = AUGraphInitialize(playGraph);
+    CAShow(playGraph);
+
+}
+
+-(void)play
+{
+    Boolean isRunning = false;
+    OSStatus result = AUGraphIsRunning(playGraph, &isRunning);
+    if(!isRunning)
+    {
+        result = AUGraphStart(playGraph);
+    }
+    ExtAudioFileRef _extAudioFile;
+    AudioFileID _audioFileID;
+    OSStatus err = noErr;
+    UInt32 size;
+    CFURLRef songURL = (__bridge  CFURLRef) self.outputPath;
+    err = ExtAudioFileOpenURL(songURL, &_extAudioFile);
+    size = sizeof(_audioFileID);
+    ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_AudioFile, &size, &_audioFileID);
+    
+    SInt64 fileLengthFrames;
+    size = sizeof(SInt64);
+    err = ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_FileLengthFrames, &size, &fileLengthFrames);
+    
+    err = AudioUnitSetProperty(playerUnit, kAudioUnitProperty_ScheduledFileIDs, kAudioUnitScope_Global, 0, &_audioFileID, sizeof(AudioFileID));
+    
+    
+    UInt32 _audioFileFrames = fileLengthFrames;
+    ScheduledAudioFileRegion region = {0};
+    region.mAudioFile = _audioFileID;
+    region.mCompletionProc = NULL;
+    region.mCompletionProcUserData = NULL;
+    region.mLoopCount = -1;
+    region.mStartFrame = 0;
+    region.mFramesToPlay = _audioFileFrames - region.mStartFrame;
+    region.mTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
+    region.mTimeStamp.mSampleTime = 0;
+    if (MaxSampleTime < region.mFramesToPlay)
+    {
+        MaxSampleTime = region.mFramesToPlay;
+    }
+    err = AudioUnitSetProperty(playerUnit, kAudioUnitProperty_ScheduledFileRegion, kAudioUnitScope_Global, 0, &region, sizeof(ScheduledAudioFileRegion));
+    
+    UInt32 defaultVal = 0;
+    
+    AudioUnitSetProperty(playerUnit, kAudioUnitProperty_ScheduledFilePrime,
+                         kAudioUnitScope_Global, 0, &defaultVal, sizeof(defaultVal));
+    
+    //play
+    
+    AudioTimeStamp theTimeStamp = {0};
+    theTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
+    theTimeStamp.mSampleTime = -1;
+    err = AudioUnitSetProperty(playerUnit,
+                               kAudioUnitProperty_ScheduleStartTimeStamp, kAudioUnitScope_Global, 0,
+                               &theTimeStamp, sizeof(theTimeStamp));
+}
+
 -(AudioUnitParameterValue)getValueForParamId:(AudioUnitParameterID)paramId
 {
     AudioUnitParameterValue value = 0;
     
     AudioUnitGetParameter(reverbPut, paramId, kAudioUnitScope_Global, 0, &value);
+    //AudioUnitGetParameter(playReverbUnit, paramId, kAudioUnitScope_Global, 0, &value);
     
     return value;
 }
@@ -192,10 +305,17 @@
 -(void)setValue:(AudioUnitParameterValue)value forParamId:(AudioUnitParameterID)paramId
 {
     AudioUnitSetParameter(reverbPut, paramId, kAudioUnitScope_Global, 0, value, 0);
+    AudioUnitSetParameter(playReverbUnit, paramId, kAudioUnitScope_Global, 0, value, 0);
 }
 
 -(void)start
 {
+    if (!self.outputPath)
+    {
+        UIAlertView *alert = [[UIAlertView alloc]initWithTitle:@"获取文件路径失败" message:nil delegate:nil cancelButtonTitle:@"OK" otherButtonTitles:nil];
+        [alert show];
+        return;
+    }
     Boolean isRunning = false;
     OSStatus result = AUGraphIsRunning(mGraph, &isRunning);
     if(!isRunning)
@@ -207,8 +327,7 @@
     AudioFileID _audioFileID;
     OSStatus err = noErr;
     UInt32 size;
-    NSString *songPath = [[NSBundle mainBundle] pathForResource: @"recordedFile" ofType:@"caf"];
-    CFURLRef songURL = (__bridge  CFURLRef) [NSURL fileURLWithPath:songPath];
+    CFURLRef songURL = (__bridge  CFURLRef) self.outputPath;
     err = ExtAudioFileOpenURL(songURL, &_extAudioFile);
     
     size = sizeof(_audioFileID);
@@ -260,10 +379,10 @@
 {
     Boolean isRunning = false;
     
-    OSStatus result = AUGraphIsRunning(mGraph, &isRunning);
+    OSStatus result = AUGraphIsRunning(playGraph, &isRunning);
     if (isRunning)
     {
-        result = AUGraphStop(mGraph);
+        result = AUGraphStop(playGraph);
     }
 }
 
@@ -377,6 +496,7 @@
 }
 -(void)dealloc
 {
+    [self stop];
     DisposeAUGraph(mGraph);
     [[NSNotificationCenter defaultCenter] removeObserver:self
                                                     name:AVAudioSessionRouteChangeNotification
