@@ -47,7 +47,7 @@
     [sessionInstance setCategory:AVAudioSessionCategoryPlayback error:&error];
     XThrowIfError(error.code, "couldn't set audio category");
     
-    NSTimeInterval bufferDuration = 0.5;
+    NSTimeInterval bufferDuration = 0.005;
     [sessionInstance setPreferredIOBufferDuration:bufferDuration error:&error];
     NSLog(@"%f",sessionInstance.IOBufferDuration);
     XThrowIfError(error.code, "couldn't set IOBufferDuration");
