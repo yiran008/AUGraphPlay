@@ -31,8 +31,10 @@ static OSStatus	performRender (void                         *inRefCon,
 
 {
     CAStreamBasicDescription mClientFormat;
+    AudioStreamBasicDescription     stereoStreamFormat;
     AUGraph   mGraph;
     AudioUnit reverbPut;
+    AudioUnit playUnit;
 }
 - (id)init
 {
@@ -114,6 +116,7 @@ static OSStatus	performRender (void                         *inRefCon,
 {
     AUNode ioNode;
     AUNode reverbNode;
+    AUNode playNode;
     
     OSStatus result = noErr;
     
@@ -123,21 +126,24 @@ static OSStatus	performRender (void                         *inRefCon,
     
     CAComponentDescription reverb_desc(kAudioUnitType_Effect, kAudioUnitSubType_Reverb2, kAudioUnitManufacturer_Apple);
     
+    CAComponentDescription play_desc(kAudioUnitType_Generator, kAudioUnitSubType_AudioFilePlayer, kAudioUnitManufacturer_Apple);
+    
     result = AUGraphAddNode(mGraph, &output_desc, &ioNode);
     result = AUGraphAddNode(mGraph, &reverb_desc, &reverbNode);
+    result = AUGraphAddNode(mGraph, &play_desc, &playNode);
     
     result = AUGraphOpen(mGraph);
     result = AUGraphNodeInfo(mGraph, ioNode, NULL, &mOutPut);
     result = AUGraphNodeInfo(mGraph, reverbNode, NULL, &reverbPut);
+    result = AUGraphNodeInfo(mGraph, playNode, NULL, &playUnit);
 
-    UInt32 one = 1;
-    result = AudioUnitSetProperty(mOutPut, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &one, sizeof(one));
-    result = AudioUnitSetProperty(mOutPut, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &one, sizeof(one));
+//    UInt32 one = 1;
+//    result = AudioUnitSetProperty(mOutPut, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &one, sizeof(one));
+//    result = AudioUnitSetProperty(mOutPut, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &one, sizeof(one));
     
 
     //CAStreamBasicDescription ioFormat = CAStreamBasicDescription(44100, 1, CAStreamBasicDescription::kPCMFormatFloat32, false);
     size_t bytesPerSample = sizeof (AudioUnitSampleType);
-    AudioStreamBasicDescription     stereoStreamFormat;
     // Fill the application audio format struct's fields to define a linear PCM,
     //        stereo, noninterleaved stream at the hardware sample rate.
     stereoStreamFormat.mFormatID          = kAudioFormatLinearPCM;
@@ -156,12 +162,20 @@ static OSStatus	performRender (void                         *inRefCon,
                                    &stereoStreamFormat,
                                    sizeof (stereoStreamFormat)
                                    );
-    result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &stereoStreamFormat, sizeof(stereoStreamFormat));
-    result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &stereoStreamFormat, sizeof(stereoStreamFormat));
+    result = AudioUnitSetProperty(
+                                  playUnit,
+                                  kAudioUnitProperty_StreamFormat,
+                                  kAudioUnitScope_Output,
+                                  0,
+                                  &stereoStreamFormat,
+                                  sizeof (stereoStreamFormat)
+                                  );
+    //result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &stereoStreamFormat, sizeof(stereoStreamFormat));
+    //result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &stereoStreamFormat, sizeof(stereoStreamFormat));
     AUGraphConnectNodeInput(mGraph, reverbNode, 0, ioNode, 0);
     AUGraphConnectNodeInput(mGraph,
-                            ioNode,
-                            1,
+                            playNode,
+                            0,
                             reverbNode,
                             0);
     cd.rioUnit = reverbPut;
@@ -173,6 +187,7 @@ static OSStatus	performRender (void                         *inRefCon,
 //    AUGraphSetNodeInputCallback(mGraph, reverbNode, 0, &renderCallback);
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
+    AUGraphStart (mGraph);
 }
 -(AudioUnitParameterValue)getValueForParamId:(AudioUnitParameterID)paramId
 {
@@ -190,12 +205,56 @@ static OSStatus	performRender (void                         *inRefCon,
 
 -(void)start
 {
-    Boolean isRunning = false;
-    OSStatus result = AUGraphIsRunning(mGraph, &isRunning);
-    if(!isRunning)
-    {
-        result = AUGraphStart(mGraph);
-    }
+//    Boolean isRunning = false;
+//    OSStatus result = AUGraphIsRunning(mGraph, &isRunning);
+//    if(!isRunning)
+//    {
+//        result = AUGraphStart(mGraph);
+//    }
+    //region
+    ExtAudioFileRef _extAudioFile;
+    AudioFileID _audioFileID;
+    OSStatus err = noErr;
+    UInt32 size;
+    NSString *songPath = [[NSBundle mainBundle] pathForResource: @"MiAmor" ofType:@"mp3"];
+    CFURLRef songURL = (__bridge  CFURLRef) [NSURL fileURLWithPath:songPath];
+    err = ExtAudioFileOpenURL(songURL, &_extAudioFile);
+    
+    size = sizeof(_audioFileID);
+    ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_AudioFile, &size, &_audioFileID);
+    
+    size = sizeof(AudioStreamBasicDescription);
+    err = AudioFileGetProperty(_audioFileID, kAudioFilePropertyDataFormat, &size, &stereoStreamFormat);
+    
+    SInt64 fileLengthFrames;
+    size = sizeof(SInt64);
+    err = ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_FileLengthFrames, &size, &fileLengthFrames);
+    
+    err = AudioUnitSetProperty(playUnit, kAudioUnitProperty_ScheduledFileIDs, kAudioUnitScope_Global, 0, &_audioFileID, sizeof(AudioFileID));
+    UInt32 _audioFileFrames = fileLengthFrames;
+    ScheduledAudioFileRegion region = {0};
+    region.mAudioFile = _audioFileID;
+    region.mCompletionProc = NULL;
+    region.mCompletionProcUserData = NULL;
+    region.mLoopCount = 0;
+    region.mStartFrame = 0;
+    region.mFramesToPlay = _audioFileFrames - region.mStartFrame;
+    region.mTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
+    region.mTimeStamp.mSampleTime = 0;
+    
+    err = AudioUnitSetProperty(playUnit, kAudioUnitProperty_ScheduledFileRegion, kAudioUnitScope_Global, 0, &region, sizeof(ScheduledAudioFileRegion));
+
+    
+    
+    //play
+    
+    AudioTimeStamp theTimeStamp = {0};
+    theTimeStamp.mFlags = kAudioTimeStampHostTimeValid;
+    theTimeStamp.mHostTime = 0;
+    err = AudioUnitSetProperty(playUnit,
+                               kAudioUnitProperty_ScheduleStartTimeStamp, kAudioUnitScope_Global, 0,
+                               &theTimeStamp, sizeof(theTimeStamp));
+
 }
 
 -(void)stop

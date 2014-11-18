@@ -22,6 +22,7 @@
 		5F5432E11A14A82800E053FE /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F5432E01A14A82800E053FE /* AVFoundation.framework */; };
 		5F5432E31A14A9C000E053FE /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F5432E21A14A9C000E053FE /* UIKit.framework */; };
 		5F5432E51A14A9C600E053FE /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F5432E41A14A9C600E053FE /* Foundation.framework */; };
+		5FD636411A1AF6DB0087AD40 /* MiAmor.mp3 in Resources */ = {isa = PBXBuildFile; fileRef = 5FD636401A1AF6DB0087AD40 /* MiAmor.mp3 */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 		5F5432E01A14A82800E053FE /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		5F5432E21A14A9C000E053FE /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		5F5432E41A14A9C600E053FE /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		5FD636401A1AF6DB0087AD40 /* MiAmor.mp3 */ = {isa = PBXFileReference; lastKnownFileType = audio.mp3; path = MiAmor.mp3; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -118,6 +120,7 @@
 				5F5432B01A149F7200E053FE /* ViewController.m */,
 				5F5432DD1A14A06D00E053FE /* AUGraphPlayer.h */,
 				5F5432DE1A14A06D00E053FE /* AUGraphPlayer.m */,
+				5FD636401A1AF6DB0087AD40 /* MiAmor.mp3 */,
 				5F5432B21A149F7200E053FE /* Main.storyboard */,
 				5F5432B51A149F7200E053FE /* Images.xcassets */,
 				5F5432B71A149F7200E053FE /* LaunchScreen.xib */,
@@ -250,6 +253,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5F5432B41A149F7200E053FE /* Main.storyboard in Resources */,
+				5FD636411A1AF6DB0087AD40 /* MiAmor.mp3 in Resources */,
 				5F5432B91A149F7200E053FE /* LaunchScreen.xib in Resources */,
 				5F5432B61A149F7200E053FE /* Images.xcassets in Resources */,
 			);
@@ -471,6 +475,7 @@
 				5F5432CA1A149F7200E053FE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 		5F5432CB1A149F7200E053FE /* Build configuration list for PBXNativeTarget "AUGraphPlayDemoTests" */ = {
 			isa = XCConfigurationList;
@@ -479,6 +484,7 @@
 				5F5432CD1A149F7200E053FE /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
