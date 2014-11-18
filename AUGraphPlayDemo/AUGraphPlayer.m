@@ -7,30 +7,11 @@
 //
 
 #import "AUGraphPlayer.h"
+#define Out 0
 
-struct CallbackData {
-    AudioUnit               rioUnit;
-    CallbackData(): rioUnit(NULL) {}
-} cd;
-
-static OSStatus	performRender (void                         *inRefCon,
-                               AudioUnitRenderActionFlags 	*ioActionFlags,
-                               const AudioTimeStamp 		*inTimeStamp,
-                               UInt32 						inBusNumber,
-                               UInt32 						inNumberFrames,
-                               AudioBufferList              *ioData)
-{
-    OSStatus err = noErr;
-        // we are calling AudioUnitRender on the input bus of AURemoteIO
-        // this will store the audio data captured by the microphone in ioData
-        err = AudioUnitRender(cd.rioUnit, ioActionFlags, inTimeStamp, 1, inNumberFrames, ioData);
-    
-    return err;
-}
 @implementation AUGraphPlayer
 
 {
-    CAStreamBasicDescription mClientFormat;
     AudioStreamBasicDescription     stereoStreamFormat;
     AUGraph   mGraph;
     AudioUnit reverbPut;
@@ -43,7 +24,7 @@ static OSStatus	performRender (void                         *inRefCon,
     self = [super init];
     if (self)
     {
-        //[self initializeAudioSession];
+        [self initializeAudioSession];
         MaxSampleTime = 0.0;
         [self initializeAUGraph];
     }
@@ -60,8 +41,9 @@ static OSStatus	performRender (void                         *inRefCon,
     [sessionInstance setCategory:AVAudioSessionCategoryPlayback error:&error];
     XThrowIfError(error.code, "couldn't set audio category");
     
-    NSTimeInterval bufferDuration = .005;
+    NSTimeInterval bufferDuration = 0.5;
     [sessionInstance setPreferredIOBufferDuration:bufferDuration error:&error];
+    NSLog(@"%f",sessionInstance.IOBufferDuration);
     XThrowIfError(error.code, "couldn't set IOBufferDuration");
     
     double hwSampleRate = 44100.0;
@@ -117,33 +99,45 @@ static OSStatus	performRender (void                         *inRefCon,
 
 -(void)initializeAUGraph
 {
+#if Out
     AUNode ioNode;
+#else
+    AUNode gioNode;
+#endif
     AUNode reverbNode;
     AUNode playNode;
-    //AUNode gioNode;
     
     OSStatus result = noErr;
     
     result = NewAUGraph(&mGraph);
-    
+#if Out
     CAComponentDescription output_desc(kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple);
-    
+#else
+    CAComponentDescription gout_desc(kAudioUnitType_Output, kAudioUnitSubType_GenericOutput, kAudioUnitManufacturer_Apple);
+#endif
     CAComponentDescription reverb_desc(kAudioUnitType_Effect, kAudioUnitSubType_Reverb2, kAudioUnitManufacturer_Apple);
     
     CAComponentDescription play_desc(kAudioUnitType_Generator, kAudioUnitSubType_AudioFilePlayer, kAudioUnitManufacturer_Apple);
     
-    //CAComponentDescription gout_desc(kAudioUnitType_Output, kAudioUnitSubType_GenericOutput, kAudioUnitManufacturer_Apple);
     
+#if Out
     result = AUGraphAddNode(mGraph, &output_desc, &ioNode);
+#else
+    result = AUGraphAddNode(mGraph, &gout_desc, &gioNode);
+#endif
     result = AUGraphAddNode(mGraph, &reverb_desc, &reverbNode);
     result = AUGraphAddNode(mGraph, &play_desc, &playNode);
-    //result = AUGraphAddNode(mGraph, &gout_desc, &gioNode);
+    
     
     result = AUGraphOpen(mGraph);
+#if Out
     result = AUGraphNodeInfo(mGraph, ioNode, NULL, &mOutPut);
+#else
+    result = AUGraphNodeInfo(mGraph, gioNode, NULL, &mGIO);
+#endif
     result = AUGraphNodeInfo(mGraph, reverbNode, NULL, &reverbPut);
     result = AUGraphNodeInfo(mGraph, playNode, NULL, &playUnit);
-    //result = AUGraphNodeInfo(mGraph, gioNode, NULL, &mGIO);
+    
 
     size_t bytesPerSample = sizeof (AudioUnitSampleType);
     // Fill the application audio format struct's fields to define a linear PCM,
@@ -172,21 +166,17 @@ static OSStatus	performRender (void                         *inRefCon,
                                   &stereoStreamFormat,
                                   sizeof (stereoStreamFormat)
                                   );
-
+#if Out
     AUGraphConnectNodeInput(mGraph, reverbNode, 0, ioNode, 0);
-    //AUGraphConnectNodeInput(mGraph, reverbNode, 0, gioNode, 0);
+#else
+    AUGraphConnectNodeInput(mGraph, reverbNode, 0, gioNode, 0);
+#endif
     AUGraphConnectNodeInput(mGraph,
                             playNode,
                             0,
                             reverbNode,
                             0);
-    cd.rioUnit = reverbPut;
     
-//    AURenderCallbackStruct renderCallback;
-//    renderCallback.inputProc = &performRender;
-//    renderCallback.inputProcRefCon = NULL;
-//    
-//    AUGraphSetNodeInputCallback(mGraph, reverbNode, 0, &renderCallback);
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
 }
@@ -217,16 +207,12 @@ static OSStatus	performRender (void                         *inRefCon,
     AudioFileID _audioFileID;
     OSStatus err = noErr;
     UInt32 size;
-    NSString *songPath = [[NSBundle mainBundle] pathForResource: @"MiAmor" ofType:@"mp3"];
+    NSString *songPath = [[NSBundle mainBundle] pathForResource: @"recordedFile" ofType:@"caf"];
     CFURLRef songURL = (__bridge  CFURLRef) [NSURL fileURLWithPath:songPath];
     err = ExtAudioFileOpenURL(songURL, &_extAudioFile);
     
     size = sizeof(_audioFileID);
     ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_AudioFile, &size, &_audioFileID);
-    
-    AudioStreamBasicDescription fileASBD;
-    size = sizeof(fileASBD);
-    err = AudioFileGetProperty(_audioFileID, kAudioFilePropertyDataFormat, &size, &fileASBD);
     
     SInt64 fileLengthFrames;
     size = sizeof(SInt64);
@@ -264,8 +250,9 @@ static OSStatus	performRender (void                         *inRefCon,
     err = AudioUnitSetProperty(playUnit,
                                kAudioUnitProperty_ScheduleStartTimeStamp, kAudioUnitScope_Global, 0,
                                &theTimeStamp, sizeof(theTimeStamp));
-    
-    //[self startGenerate];
+#if !Out
+    [self startGenerate];
+#endif
 
 }
 
@@ -323,7 +310,6 @@ static OSStatus	performRender (void                         *inRefCon,
                                     &clientFormat,
                                     &fSize);
     
-    // set the audio data format of mixer Unit
     ExtAudioFileSetProperty(extAudioFile,
                                        kExtAudioFileProperty_ClientDataFormat,
                                        sizeof(clientFormat),
@@ -335,7 +321,7 @@ static OSStatus	performRender (void                         *inRefCon,
                                        sizeof(codec),
                                        &codec);
     
-    ExtAudioFileWriteAsync(extAudioFile, 0, NULL);
+    //ExtAudioFileWriteAsync(extAudioFile, 0, NULL);
     
     
     AudioUnitRenderActionFlags flags = 0;
@@ -374,12 +360,20 @@ static OSStatus	performRender (void                         *inRefCon,
         }
         AudioUnitRender(mGIO,&flags,&inTimeStamp,busNumber,numberFrames,bufferList);
         
-        ExtAudioFileWrite(extAudioFile, numberFrames, bufferList);
+        
+        result = ExtAudioFileWrite(extAudioFile, numberFrames, bufferList);
+        for (int j=0; j<channelCount; j++)
+        {
+            free(bufferList->mBuffers[j].mData);
+        }
         free(bufferList);
         
     }
     OSStatus status = ExtAudioFileDispose(extAudioFile);
     printf("OSStatus(ExtAudioFileDispose): %ld\n", status);
+    UIAlertView *alert = [[UIAlertView alloc]initWithTitle:@"完成" message:nil delegate:nil cancelButtonTitle:@"OK" otherButtonTitles: nil];
+    [alert show];
+
 }
 -(void)dealloc
 {

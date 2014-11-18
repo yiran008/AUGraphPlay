@@ -9,6 +9,7 @@
 #import <Foundation/Foundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #import <AVFoundation/AVFoundation.h>
+#import <UIKit/UIKit.h>
 #import "CAStreamBasicDescription.h"
 #import "CAComponentDescription.h"
 #import "CAXException.h"
