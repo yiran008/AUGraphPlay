@@ -35,6 +35,8 @@ static OSStatus	performRender (void                         *inRefCon,
     AUGraph   mGraph;
     AudioUnit reverbPut;
     AudioUnit playUnit;
+    AudioUnit mGIO;
+    Float64 MaxSampleTime;
 }
 - (id)init
 {
@@ -42,6 +44,7 @@ static OSStatus	performRender (void                         *inRefCon,
     if (self)
     {
         //[self initializeAudioSession];
+        MaxSampleTime = 0.0;
         [self initializeAUGraph];
     }
     return self;
@@ -117,6 +120,7 @@ static OSStatus	performRender (void                         *inRefCon,
     AUNode ioNode;
     AUNode reverbNode;
     AUNode playNode;
+    //AUNode gioNode;
     
     OSStatus result = noErr;
     
@@ -128,21 +132,19 @@ static OSStatus	performRender (void                         *inRefCon,
     
     CAComponentDescription play_desc(kAudioUnitType_Generator, kAudioUnitSubType_AudioFilePlayer, kAudioUnitManufacturer_Apple);
     
+    //CAComponentDescription gout_desc(kAudioUnitType_Output, kAudioUnitSubType_GenericOutput, kAudioUnitManufacturer_Apple);
+    
     result = AUGraphAddNode(mGraph, &output_desc, &ioNode);
     result = AUGraphAddNode(mGraph, &reverb_desc, &reverbNode);
     result = AUGraphAddNode(mGraph, &play_desc, &playNode);
+    //result = AUGraphAddNode(mGraph, &gout_desc, &gioNode);
     
     result = AUGraphOpen(mGraph);
     result = AUGraphNodeInfo(mGraph, ioNode, NULL, &mOutPut);
     result = AUGraphNodeInfo(mGraph, reverbNode, NULL, &reverbPut);
     result = AUGraphNodeInfo(mGraph, playNode, NULL, &playUnit);
+    //result = AUGraphNodeInfo(mGraph, gioNode, NULL, &mGIO);
 
-//    UInt32 one = 1;
-//    result = AudioUnitSetProperty(mOutPut, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Output, 0, &one, sizeof(one));
-//    result = AudioUnitSetProperty(mOutPut, kAudioOutputUnitProperty_EnableIO, kAudioUnitScope_Input, 1, &one, sizeof(one));
-    
-
-    //CAStreamBasicDescription ioFormat = CAStreamBasicDescription(44100, 1, CAStreamBasicDescription::kPCMFormatFloat32, false);
     size_t bytesPerSample = sizeof (AudioUnitSampleType);
     // Fill the application audio format struct's fields to define a linear PCM,
     //        stereo, noninterleaved stream at the hardware sample rate.
@@ -170,9 +172,9 @@ static OSStatus	performRender (void                         *inRefCon,
                                   &stereoStreamFormat,
                                   sizeof (stereoStreamFormat)
                                   );
-    //result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &stereoStreamFormat, sizeof(stereoStreamFormat));
-    //result = AudioUnitSetProperty(mOutPut, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &stereoStreamFormat, sizeof(stereoStreamFormat));
+
     AUGraphConnectNodeInput(mGraph, reverbNode, 0, ioNode, 0);
+    //AUGraphConnectNodeInput(mGraph, reverbNode, 0, gioNode, 0);
     AUGraphConnectNodeInput(mGraph,
                             playNode,
                             0,
@@ -187,7 +189,6 @@ static OSStatus	performRender (void                         *inRefCon,
 //    AUGraphSetNodeInputCallback(mGraph, reverbNode, 0, &renderCallback);
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
-    AUGraphStart (mGraph);
 }
 -(AudioUnitParameterValue)getValueForParamId:(AudioUnitParameterID)paramId
 {
@@ -205,12 +206,12 @@ static OSStatus	performRender (void                         *inRefCon,
 
 -(void)start
 {
-//    Boolean isRunning = false;
-//    OSStatus result = AUGraphIsRunning(mGraph, &isRunning);
-//    if(!isRunning)
-//    {
-//        result = AUGraphStart(mGraph);
-//    }
+    Boolean isRunning = false;
+    OSStatus result = AUGraphIsRunning(mGraph, &isRunning);
+    if(!isRunning)
+    {
+        result = AUGraphStart(mGraph);
+    }
     //region
     ExtAudioFileRef _extAudioFile;
     AudioFileID _audioFileID;
@@ -223,37 +224,48 @@ static OSStatus	performRender (void                         *inRefCon,
     size = sizeof(_audioFileID);
     ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_AudioFile, &size, &_audioFileID);
     
-    size = sizeof(AudioStreamBasicDescription);
-    err = AudioFileGetProperty(_audioFileID, kAudioFilePropertyDataFormat, &size, &stereoStreamFormat);
+    AudioStreamBasicDescription fileASBD;
+    size = sizeof(fileASBD);
+    err = AudioFileGetProperty(_audioFileID, kAudioFilePropertyDataFormat, &size, &fileASBD);
     
     SInt64 fileLengthFrames;
     size = sizeof(SInt64);
     err = ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_FileLengthFrames, &size, &fileLengthFrames);
     
     err = AudioUnitSetProperty(playUnit, kAudioUnitProperty_ScheduledFileIDs, kAudioUnitScope_Global, 0, &_audioFileID, sizeof(AudioFileID));
+    
+    
     UInt32 _audioFileFrames = fileLengthFrames;
     ScheduledAudioFileRegion region = {0};
     region.mAudioFile = _audioFileID;
     region.mCompletionProc = NULL;
     region.mCompletionProcUserData = NULL;
-    region.mLoopCount = 0;
+    region.mLoopCount = -1;
     region.mStartFrame = 0;
     region.mFramesToPlay = _audioFileFrames - region.mStartFrame;
     region.mTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
     region.mTimeStamp.mSampleTime = 0;
-    
+    if (MaxSampleTime < region.mFramesToPlay)
+    {
+        MaxSampleTime = region.mFramesToPlay;
+    }
     err = AudioUnitSetProperty(playUnit, kAudioUnitProperty_ScheduledFileRegion, kAudioUnitScope_Global, 0, &region, sizeof(ScheduledAudioFileRegion));
 
+    UInt32 defaultVal = 0;
     
+    AudioUnitSetProperty(playUnit, kAudioUnitProperty_ScheduledFilePrime,
+                                    kAudioUnitScope_Global, 0, &defaultVal, sizeof(defaultVal));
     
     //play
     
     AudioTimeStamp theTimeStamp = {0};
-    theTimeStamp.mFlags = kAudioTimeStampHostTimeValid;
-    theTimeStamp.mHostTime = 0;
+    theTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
+    theTimeStamp.mSampleTime = -1;
     err = AudioUnitSetProperty(playUnit,
                                kAudioUnitProperty_ScheduleStartTimeStamp, kAudioUnitScope_Global, 0,
                                &theTimeStamp, sizeof(theTimeStamp));
+    
+    //[self startGenerate];
 
 }
 
@@ -268,7 +280,107 @@ static OSStatus	performRender (void                         *inRefCon,
     }
 }
 
-
+-(void)startGenerate
+{
+    ExtAudioFileRef extAudioFile;
+    AudioStreamBasicDescription destinationFormat;
+    memset(&destinationFormat, 0, sizeof(destinationFormat));
+    destinationFormat.mChannelsPerFrame = 2;
+    destinationFormat.mFormatID = kAudioFormatMPEG4AAC;
+    UInt32 size = sizeof(destinationFormat);
+    OSStatus result = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &destinationFormat);
+    if(result) printf("AudioFormatGetProperty %ld \n", result);
+    NSArray  *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *documentsDirectory = [paths objectAtIndex:0];
+    
+    
+    
+    NSString *destinationFilePath = [[NSString alloc] initWithFormat: @"%@/output.m4a", documentsDirectory];
+    CFURLRef destinationURL = CFURLCreateWithFileSystemPath(kCFAllocatorDefault,
+                                                            (CFStringRef)destinationFilePath,
+                                                            kCFURLPOSIXPathStyle,
+                                                            false);
+    
+    // specify codec Saving the output in .m4a format
+    result = ExtAudioFileCreateWithURL(destinationURL,
+                                       kAudioFileM4AType,
+                                       &destinationFormat,
+                                       NULL,
+                                       kAudioFileFlags_EraseFile,
+                                       &extAudioFile);
+    if(result) printf("ExtAudioFileCreateWithURL %ld \n", result);
+    CFRelease(destinationURL);
+    
+    // This is a very important part and easiest way to set the ASBD for the File with correct format.
+    AudioStreamBasicDescription clientFormat;
+    UInt32 fSize = sizeof (clientFormat);
+    memset(&clientFormat, 0, sizeof(clientFormat));
+    // get the audio data format from the Output Unit
+    AudioUnitGetProperty(mGIO,
+                                    kAudioUnitProperty_StreamFormat,
+                                    kAudioUnitScope_Output,
+                                    0,
+                                    &clientFormat,
+                                    &fSize);
+    
+    // set the audio data format of mixer Unit
+    ExtAudioFileSetProperty(extAudioFile,
+                                       kExtAudioFileProperty_ClientDataFormat,
+                                       sizeof(clientFormat),
+                                       &clientFormat);
+    // specify codec
+    UInt32 codec = kAppleHardwareAudioCodecManufacturer;
+    ExtAudioFileSetProperty(extAudioFile,
+                                       kExtAudioFileProperty_CodecManufacturer,
+                                       sizeof(codec),
+                                       &codec);
+    
+    ExtAudioFileWriteAsync(extAudioFile, 0, NULL);
+    
+    
+    AudioUnitRenderActionFlags flags = 0;
+    AudioTimeStamp inTimeStamp;
+    memset(&inTimeStamp, 0, sizeof(AudioTimeStamp));
+    inTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
+    UInt32 busNumber = 0;
+    UInt32 numberFrames = 512;
+    inTimeStamp.mSampleTime = 0;
+    int channelCount = 2;
+    
+    NSLog(@"Final numberFrames :%li",numberFrames);
+    int totFrms = MaxSampleTime;
+    while (totFrms > 0)
+    {
+        if (totFrms < numberFrames)
+        {
+            numberFrames = totFrms;
+            NSLog(@"Final numberFrames :%li",numberFrames);
+        }
+        else
+        {
+            totFrms -= numberFrames;
+        }
+        AudioBufferList *bufferList = (AudioBufferList*)malloc(sizeof(AudioBufferList)+sizeof(AudioBuffer)*(channelCount-1));
+        bufferList->mNumberBuffers = channelCount;
+        for (int j=0; j<channelCount; j++)
+        {
+            AudioBuffer buffer = {0};
+            buffer.mNumberChannels = 1;
+            buffer.mDataByteSize = numberFrames*sizeof(AudioUnitSampleType);
+            buffer.mData = calloc(numberFrames, sizeof(AudioUnitSampleType));
+            
+            bufferList->mBuffers[j] = buffer;
+            
+        }
+        AudioUnitRender(mGIO,&flags,&inTimeStamp,busNumber,numberFrames,bufferList);
+        
+        ExtAudioFileWrite(extAudioFile, numberFrames, bufferList);
+        free(bufferList);
+        
+    }
+    OSStatus status = ExtAudioFileDispose(extAudioFile);
+    printf("OSStatus(ExtAudioFileDispose): %ld\n", status);
+}
 -(void)dealloc
 {
     DisposeAUGraph(mGraph);
