@@ -29,6 +29,7 @@
     self = [super init];
     if (self)
     {
+        _startProgress = 0;
         [self initializeAudioSession];
         MaxSampleTime = 0.0;
         [self initializeAUGraph];
@@ -47,10 +48,10 @@
     [sessionInstance setCategory:AVAudioSessionCategoryPlayback error:&error];
     XThrowIfError(error.code, "couldn't set audio category");
     
-    NSTimeInterval bufferDuration = 0.005;
-    [sessionInstance setPreferredIOBufferDuration:bufferDuration error:&error];
-    NSLog(@"%f",sessionInstance.IOBufferDuration);
-    XThrowIfError(error.code, "couldn't set IOBufferDuration");
+//    NSTimeInterval bufferDuration = 0.005;
+//    [sessionInstance setPreferredIOBufferDuration:bufferDuration error:&error];
+//    NSLog(@"%f",sessionInstance.IOBufferDuration);
+//    XThrowIfError(error.code, "couldn't set IOBufferDuration");
     
     double hwSampleRate = 44100.0;
     [sessionInstance setPreferredSampleRate:hwSampleRate error:&error];
@@ -237,6 +238,12 @@
 
 }
 
+-(void)playProgress:(Float32)preogress
+{
+    [self stop];
+    _startProgress = preogress;
+    [self play];
+}
 -(void)play
 {
     Boolean isRunning = false;
@@ -266,8 +273,8 @@
     region.mAudioFile = _audioFileID;
     region.mCompletionProc = NULL;
     region.mCompletionProcUserData = NULL;
-    region.mLoopCount = -1;
-    region.mStartFrame = 0;
+    region.mLoopCount = 0;
+    region.mStartFrame = _startProgress *fileLengthFrames;
     region.mFramesToPlay = _audioFileFrames - region.mStartFrame;
     region.mTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
     region.mTimeStamp.mSampleTime = 0;
@@ -345,7 +352,7 @@
     region.mAudioFile = _audioFileID;
     region.mCompletionProc = NULL;
     region.mCompletionProcUserData = NULL;
-    region.mLoopCount = -1;
+    region.mLoopCount = 0;
     region.mStartFrame = 0;
     region.mFramesToPlay = _audioFileFrames - region.mStartFrame;
     region.mTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
@@ -378,7 +385,7 @@
 -(void)stop
 {
     Boolean isRunning = false;
-    
+    _startProgress = 0;
     OSStatus result = AUGraphIsRunning(playGraph, &isRunning);
     if (isRunning)
     {
@@ -421,6 +428,11 @@
     AudioStreamBasicDescription clientFormat;
     UInt32 fSize = sizeof (clientFormat);
     memset(&clientFormat, 0, sizeof(clientFormat));
+    UInt32 codec = kAppleSoftwareAudioCodecManufacturer;
+    ExtAudioFileSetProperty(extAudioFile,
+                            kExtAudioFileProperty_CodecManufacturer,
+                            sizeof(codec),
+                            &codec);
     // get the audio data format from the Output Unit
     AudioUnitGetProperty(mGIO,
                                     kAudioUnitProperty_StreamFormat,
@@ -434,11 +446,7 @@
                                        sizeof(clientFormat),
                                        &clientFormat);
     // specify codec
-    UInt32 codec = kAppleHardwareAudioCodecManufacturer;
-    ExtAudioFileSetProperty(extAudioFile,
-                                       kExtAudioFileProperty_CodecManufacturer,
-                                       sizeof(codec),
-                                       &codec);
+    
     
     //ExtAudioFileWriteAsync(extAudioFile, 0, NULL);
     

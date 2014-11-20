@@ -151,6 +151,10 @@
 - (IBAction)stop:(id)sender {
     [self.player stop];
 }
+- (IBAction)changePlayProgress:(id)sender {
+    Float32 progress = ((UISlider*)sender).value/100.f;
+    [self.player playProgress:progress];
+}
 
 
 @end
