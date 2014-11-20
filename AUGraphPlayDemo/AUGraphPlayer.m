@@ -7,7 +7,6 @@
 //
 
 #import "AUGraphPlayer.h"
-#define Out 0
 
 @implementation AUGraphPlayer
 
@@ -16,6 +15,8 @@
     AUGraph   mGraph;
     AudioUnit reverbPut;
     AudioUnit playUnit;
+    AudioUnit hmPlayUnit;
+    AudioUnit mixerUnit;
     AudioUnit mGIO;
     Float64 MaxSampleTime;
     
@@ -106,46 +107,36 @@
 
 -(void)initializeAUGraph
 {
-#if Out
-    AUNode ioNode;
-#else
     AUNode gioNode;
-#endif
     AUNode reverbNode;
     AUNode playNode;
-    
+    AUNode hmplayNode;
+    AUNode mixerNode;
     OSStatus result = noErr;
     
     result = NewAUGraph(&mGraph);
-#if Out
-    CAComponentDescription output_desc(kAudioUnitType_Output, kAudioUnitSubType_RemoteIO, kAudioUnitManufacturer_Apple);
-#else
+
     CAComponentDescription gout_desc(kAudioUnitType_Output, kAudioUnitSubType_GenericOutput, kAudioUnitManufacturer_Apple);
-#endif
     CAComponentDescription reverb_desc(kAudioUnitType_Effect, kAudioUnitSubType_Reverb2, kAudioUnitManufacturer_Apple);
-    
     CAComponentDescription play_desc(kAudioUnitType_Generator, kAudioUnitSubType_AudioFilePlayer, kAudioUnitManufacturer_Apple);
+    CAComponentDescription mixer_desc(kAudioUnitType_Mixer, kAudioUnitSubType_MultiChannelMixer, kAudioUnitManufacturer_Apple);
     
     
-#if Out
-    result = AUGraphAddNode(mGraph, &output_desc, &ioNode);
-#else
-    result = AUGraphAddNode(mGraph, &gout_desc, &gioNode);
-#endif
-    result = AUGraphAddNode(mGraph, &reverb_desc, &reverbNode);
-    result = AUGraphAddNode(mGraph, &play_desc, &playNode);
-    
-    
-    result = AUGraphOpen(mGraph);
-#if Out
-    result = AUGraphNodeInfo(mGraph, ioNode, NULL, &mOutPut);
-#else
-    result = AUGraphNodeInfo(mGraph, gioNode, NULL, &mGIO);
-#endif
-    result = AUGraphNodeInfo(mGraph, reverbNode, NULL, &reverbPut);
-    result = AUGraphNodeInfo(mGraph, playNode, NULL, &playUnit);
     
 
+    result = AUGraphAddNode(mGraph, &gout_desc, &gioNode);
+    result = AUGraphAddNode(mGraph, &reverb_desc, &reverbNode);
+    result = AUGraphAddNode(mGraph, &play_desc, &playNode);
+    result = AUGraphAddNode(mGraph, &play_desc, &hmplayNode);
+    result = AUGraphAddNode(mGraph, &mixer_desc, &mixerNode);
+    
+    result = AUGraphOpen(mGraph);
+    result = AUGraphNodeInfo(mGraph, gioNode, NULL, &mGIO);
+    result = AUGraphNodeInfo(mGraph, reverbNode, NULL, &reverbPut);
+    result = AUGraphNodeInfo(mGraph, playNode, NULL, &playUnit);
+    result = AUGraphNodeInfo(mGraph, hmplayNode, NULL, &hmPlayUnit);
+    result = AUGraphNodeInfo(mGraph, mixerNode, NULL, &mixerUnit);
+    
     size_t bytesPerSample = sizeof (AudioUnitSampleType);
     // Fill the application audio format struct's fields to define a linear PCM,
     //        stereo, noninterleaved stream at the hardware sample rate.
@@ -166,7 +157,31 @@
                                    sizeof (stereoStreamFormat)
                                    );
     result = AudioUnitSetProperty(
+                                  reverbPut,
+                                  kAudioUnitProperty_StreamFormat,
+                                  kAudioUnitScope_Input,
+                                  0,
+                                  &stereoStreamFormat,
+                                  sizeof (stereoStreamFormat)
+                                  );
+    result = AudioUnitSetProperty(
                                   playUnit,
+                                  kAudioUnitProperty_StreamFormat,
+                                  kAudioUnitScope_Output,
+                                  0,
+                                  &stereoStreamFormat,
+                                  sizeof (stereoStreamFormat)
+                                  );
+    result = AudioUnitSetProperty(
+                                  hmPlayUnit,
+                                  kAudioUnitProperty_StreamFormat,
+                                  kAudioUnitScope_Output,
+                                  0,
+                                  &stereoStreamFormat,
+                                  sizeof (stereoStreamFormat)
+                                  );
+    result = AudioUnitSetProperty(
+                                  mixerUnit,
                                   kAudioUnitProperty_StreamFormat,
                                   kAudioUnitScope_Output,
                                   0,
@@ -200,17 +215,28 @@
                           &maximumFramesPerSlice,
                           sizeof (maximumFramesPerSlice)
                           );
-#if Out
-    AUGraphConnectNodeInput(mGraph, reverbNode, 0, ioNode, 0);
-#else
-    AUGraphConnectNodeInput(mGraph, reverbNode, 0, gioNode, 0);
-#endif
-    AUGraphConnectNodeInput(mGraph,
-                            playNode,
-                            0,
-                            reverbNode,
-                            0);
-    
+    AudioUnitSetProperty (
+                          hmPlayUnit,
+                          kAudioUnitProperty_MaximumFramesPerSlice,
+                          kAudioUnitScope_Global,
+                          0,
+                          &maximumFramesPerSlice,
+                          sizeof (maximumFramesPerSlice)
+                          );
+    AudioUnitSetProperty (
+                          mixerUnit,
+                          kAudioUnitProperty_MaximumFramesPerSlice,
+                          kAudioUnitScope_Global,
+                          0,
+                          &maximumFramesPerSlice,
+                          sizeof (maximumFramesPerSlice)
+                          );
+
+    AUGraphConnectNodeInput(mGraph, mixerNode, 0, gioNode, 0);
+    AUGraphConnectNodeInput(mGraph, playNode, 0, mixerNode, 0);
+    AUGraphConnectNodeInput(mGraph, reverbNode, 0, mixerNode, 1);
+    AUGraphConnectNodeInput(mGraph, hmplayNode, 0, reverbNode, 0);
+
     result = AUGraphInitialize(mGraph);
     CAShow(mGraph);
 }
@@ -386,6 +412,64 @@
         result = AUGraphStart(mGraph);
     }
     //region
+    [self setHumanRegion];
+    [self setMusicRegion];
+    [self startGenerate];
+
+}
+
+-(void)setHumanRegion
+{
+    NSString *sourceA = [[NSBundle mainBundle] pathForResource:@"humanVoice" ofType:@"caf"];
+    ExtAudioFileRef _extAudioFile;
+    AudioFileID _audioFileID;
+    OSStatus err = noErr;
+    UInt32 size;
+    CFURLRef songURL = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, (CFStringRef)sourceA, kCFURLPOSIXPathStyle, false);
+    err = ExtAudioFileOpenURL(songURL, &_extAudioFile);
+    
+    size = sizeof(_audioFileID);
+    ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_AudioFile, &size, &_audioFileID);
+    
+    SInt64 fileLengthFrames;
+    size = sizeof(SInt64);
+    err = ExtAudioFileGetProperty(_extAudioFile, kExtAudioFileProperty_FileLengthFrames, &size, &fileLengthFrames);
+    
+    err = AudioUnitSetProperty(hmPlayUnit, kAudioUnitProperty_ScheduledFileIDs, kAudioUnitScope_Global, 0, &_audioFileID, sizeof(AudioFileID));
+    
+    
+    UInt32 _audioFileFrames = fileLengthFrames;
+    ScheduledAudioFileRegion region = {0};
+    region.mAudioFile = _audioFileID;
+    region.mCompletionProc = NULL;
+    region.mCompletionProcUserData = NULL;
+    region.mLoopCount = 0;
+    region.mStartFrame = 0;
+    region.mFramesToPlay = _audioFileFrames - region.mStartFrame;
+    region.mTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
+    region.mTimeStamp.mSampleTime = 0;
+    if (MaxSampleTime < region.mFramesToPlay)
+    {
+        MaxSampleTime = region.mFramesToPlay;
+    }
+    err = AudioUnitSetProperty(hmPlayUnit, kAudioUnitProperty_ScheduledFileRegion, kAudioUnitScope_Global, 0, &region, sizeof(ScheduledAudioFileRegion));
+    
+    UInt32 defaultVal = 0;
+    
+    AudioUnitSetProperty(hmPlayUnit, kAudioUnitProperty_ScheduledFilePrime,
+                         kAudioUnitScope_Global, 0, &defaultVal, sizeof(defaultVal));
+    
+    //play
+    
+    AudioTimeStamp theTimeStamp = {0};
+    theTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
+    theTimeStamp.mSampleTime = -1;
+    err = AudioUnitSetProperty(hmPlayUnit,
+                               kAudioUnitProperty_ScheduleStartTimeStamp, kAudioUnitScope_Global, 0,
+                               &theTimeStamp, sizeof(theTimeStamp));
+}
+-(void)setMusicRegion
+{
     ExtAudioFileRef _extAudioFile;
     AudioFileID _audioFileID;
     OSStatus err = noErr;
@@ -418,11 +502,11 @@
         MaxSampleTime = region.mFramesToPlay;
     }
     err = AudioUnitSetProperty(playUnit, kAudioUnitProperty_ScheduledFileRegion, kAudioUnitScope_Global, 0, &region, sizeof(ScheduledAudioFileRegion));
-
+    
     UInt32 defaultVal = 0;
     
     AudioUnitSetProperty(playUnit, kAudioUnitProperty_ScheduledFilePrime,
-                                    kAudioUnitScope_Global, 0, &defaultVal, sizeof(defaultVal));
+                         kAudioUnitScope_Global, 0, &defaultVal, sizeof(defaultVal));
     
     //play
     
@@ -432,12 +516,7 @@
     err = AudioUnitSetProperty(playUnit,
                                kAudioUnitProperty_ScheduleStartTimeStamp, kAudioUnitScope_Global, 0,
                                &theTimeStamp, sizeof(theTimeStamp));
-#if !Out
-    [self startGenerate];
-#endif
-
 }
-
 -(void)stop
 {
     Boolean isRunning = false;

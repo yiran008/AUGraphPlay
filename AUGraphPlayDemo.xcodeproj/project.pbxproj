@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		5F4880D71A1DCE0C003EA2A2 /* humanVoice.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5F4880D61A1DCE0C003EA2A2 /* humanVoice.caf */; };
 		5F4CD6651A1B4C7F002132CA /* recordedFile.caf in Resources */ = {isa = PBXBuildFile; fileRef = 5F4CD6641A1B4C7F002132CA /* recordedFile.caf */; };
 		5F4CD6691A1B5E5F002132CA /* TableViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = 5F4CD6681A1B5E5F002132CA /* TableViewController.m */; };
 		5F4CD66B1A1C3B8D002132CA /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F4CD66A1A1C3B8D002132CA /* QuartzCore.framework */; };
@@ -39,6 +40,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		5F4880D61A1DCE0C003EA2A2 /* humanVoice.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = humanVoice.caf; sourceTree = "<group>"; };
 		5F4CD6641A1B4C7F002132CA /* recordedFile.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = recordedFile.caf; sourceTree = "<group>"; };
 		5F4CD6671A1B5E5F002132CA /* TableViewController.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TableViewController.h; sourceTree = "<group>"; };
 		5F4CD6681A1B5E5F002132CA /* TableViewController.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = TableViewController.m; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 				5F5432DE1A14A06D00E053FE /* AUGraphPlayer.m */,
 				5F4CD6671A1B5E5F002132CA /* TableViewController.h */,
 				5F4CD6681A1B5E5F002132CA /* TableViewController.m */,
+				5F4880D61A1DCE0C003EA2A2 /* humanVoice.caf */,
 				5F4CD6641A1B4C7F002132CA /* recordedFile.caf */,
 				5FD636401A1AF6DB0087AD40 /* MiAmor.mp3 */,
 				5F5432B21A149F7200E053FE /* Main.storyboard */,
@@ -265,6 +268,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5F5432B41A149F7200E053FE /* Main.storyboard in Resources */,
+				5F4880D71A1DCE0C003EA2A2 /* humanVoice.caf in Resources */,
 				5FD636411A1AF6DB0087AD40 /* MiAmor.mp3 in Resources */,
 				5F5432B91A149F7200E053FE /* LaunchScreen.xib in Resources */,
 				5F5432B61A149F7200E053FE /* Images.xcassets in Resources */,
