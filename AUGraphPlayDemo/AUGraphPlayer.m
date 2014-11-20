@@ -48,10 +48,10 @@
     [sessionInstance setCategory:AVAudioSessionCategoryPlayback error:&error];
     XThrowIfError(error.code, "couldn't set audio category");
     
-//    NSTimeInterval bufferDuration = 0.005;
-//    [sessionInstance setPreferredIOBufferDuration:bufferDuration error:&error];
-//    NSLog(@"%f",sessionInstance.IOBufferDuration);
-//    XThrowIfError(error.code, "couldn't set IOBufferDuration");
+    NSTimeInterval bufferDuration = 0.005;
+    [sessionInstance setPreferredIOBufferDuration:bufferDuration error:&error];
+    NSLog(@"%f",sessionInstance.IOBufferDuration);
+    XThrowIfError(error.code, "couldn't set IOBufferDuration");
     
     double hwSampleRate = 44100.0;
     [sessionInstance setPreferredSampleRate:hwSampleRate error:&error];
@@ -173,6 +173,33 @@
                                   &stereoStreamFormat,
                                   sizeof (stereoStreamFormat)
                                   );
+    UInt32 maximumFramesPerSlice = 8192;
+    
+    AudioUnitSetProperty (
+                          reverbPut,
+                          kAudioUnitProperty_MaximumFramesPerSlice,
+                          kAudioUnitScope_Global,
+                          0,
+                          &maximumFramesPerSlice,
+                          sizeof (maximumFramesPerSlice)
+                          );
+    AudioUnitSetProperty (
+                          mGIO,
+                          kAudioUnitProperty_MaximumFramesPerSlice,
+                          kAudioUnitScope_Global,
+                          0,
+                          &maximumFramesPerSlice,
+                          sizeof (maximumFramesPerSlice)
+                          );
+    
+    AudioUnitSetProperty (
+                          playUnit,
+                          kAudioUnitProperty_MaximumFramesPerSlice,
+                          kAudioUnitScope_Global,
+                          0,
+                          &maximumFramesPerSlice,
+                          sizeof (maximumFramesPerSlice)
+                          );
 #if Out
     AUGraphConnectNodeInput(mGraph, reverbNode, 0, ioNode, 0);
 #else
@@ -210,6 +237,35 @@
     result = AUGraphNodeInfo(playGraph, ioNode, NULL, &playIOUnit);
     result = AUGraphNodeInfo(playGraph, playNode, NULL, &playerUnit);
     result = AUGraphNodeInfo(playGraph, reverbNode, NULL, &playReverbUnit);
+    UInt32 maximumFramesPerSlice = 8192;
+    
+    AudioUnitSetProperty (
+                          playReverbUnit,
+                          kAudioUnitProperty_MaximumFramesPerSlice,
+                          kAudioUnitScope_Global,
+                          0,
+                          &maximumFramesPerSlice,
+                          sizeof (maximumFramesPerSlice)
+                          );
+    AudioUnitSetProperty (
+                          playIOUnit,
+                          kAudioUnitProperty_MaximumFramesPerSlice,
+                          kAudioUnitScope_Global,
+                          0,
+                          &maximumFramesPerSlice,
+                          sizeof (maximumFramesPerSlice)
+                          );
+
+    AudioUnitSetProperty (
+                          playReverbUnit,
+                          kAudioUnitProperty_MaximumFramesPerSlice,
+                          kAudioUnitScope_Global,
+                          0,
+                          &maximumFramesPerSlice,
+                          sizeof (maximumFramesPerSlice)
+                          );
+
+
     result = AudioUnitSetProperty(
                                   playReverbUnit,
                                   kAudioUnitProperty_StreamFormat,
@@ -399,6 +455,7 @@
     AudioStreamBasicDescription destinationFormat;
     memset(&destinationFormat, 0, sizeof(destinationFormat));
     destinationFormat.mChannelsPerFrame = 2;
+    destinationFormat.mSampleRate = 44100.0;
     destinationFormat.mFormatID = kAudioFormatMPEG4AAC;
     UInt32 size = sizeof(destinationFormat);
     OSStatus result = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &destinationFormat);
@@ -408,7 +465,7 @@
     
     
     
-    NSString *destinationFilePath = [[NSString alloc] initWithFormat: @"%@/output.m4a", documentsDirectory];
+    NSString *destinationFilePath = [[NSString alloc] initWithFormat: @"%@/output.caf", documentsDirectory];
     CFURLRef destinationURL = CFURLCreateWithFileSystemPath(kCFAllocatorDefault,
                                                             (CFStringRef)destinationFilePath,
                                                             kCFURLPOSIXPathStyle,
@@ -416,7 +473,7 @@
     
     // specify codec Saving the output in .m4a format
     result = ExtAudioFileCreateWithURL(destinationURL,
-                                       kAudioFileM4AType,
+                                       kAudioFileCAFType,
                                        &destinationFormat,
                                        NULL,
                                        kAudioFileFlags_EraseFile,
@@ -433,7 +490,6 @@
                             kExtAudioFileProperty_CodecManufacturer,
                             sizeof(codec),
                             &codec);
-    // get the audio data format from the Output Unit
     AudioUnitGetProperty(mGIO,
                                     kAudioUnitProperty_StreamFormat,
                                     kAudioUnitScope_Output,
@@ -451,17 +507,19 @@
     //ExtAudioFileWriteAsync(extAudioFile, 0, NULL);
     
     
-    AudioUnitRenderActionFlags flags = 0;
+    AudioUnitRenderActionFlags flags = kAudioOfflineUnitRenderAction_Render;
     AudioTimeStamp inTimeStamp;
     memset(&inTimeStamp, 0, sizeof(AudioTimeStamp));
     inTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
     UInt32 busNumber = 0;
-    UInt32 numberFrames = 512;
+    UInt32 numberFrames = 4096;
     inTimeStamp.mSampleTime = 0;
     int channelCount = 2;
     
     NSLog(@"Final numberFrames :%li",numberFrames);
     int totFrms = MaxSampleTime;
+    CFTimeInterval startTime = CACurrentMediaTime();
+
     while (totFrms > 0)
     {
         if (totFrms < numberFrames)
@@ -485,10 +543,14 @@
             bufferList->mBuffers[j] = buffer;
             
         }
-        AudioUnitRender(mGIO,&flags,&inTimeStamp,busNumber,numberFrames,bufferList);
+                AudioUnitRender(mGIO,&flags,&inTimeStamp,busNumber,numberFrames,bufferList);
         
+//        startTime = CACurrentMediaTime();
+        ExtAudioFileWrite(extAudioFile, numberFrames, bufferList);
+//        endTime = CACurrentMediaTime();
+        inTimeStamp.mSampleTime += numberFrames;
+//        NSLog(@"write Runtime: %g s", endTime - startTime);
         
-        result = ExtAudioFileWrite(extAudioFile, numberFrames, bufferList);
         for (int j=0; j<channelCount; j++)
         {
             free(bufferList->mBuffers[j].mData);
@@ -496,6 +558,9 @@
         free(bufferList);
         
     }
+    CFTimeInterval endTime = CACurrentMediaTime();
+    NSLog(@"render Runtime: %g s", endTime - startTime);
+
     OSStatus status = ExtAudioFileDispose(extAudioFile);
     printf("OSStatus(ExtAudioFileDispose): %ld\n", status);
     UIAlertView *alert = [[UIAlertView alloc]initWithTitle:@"完成" message:nil delegate:nil cancelButtonTitle:@"OK" otherButtonTitles: nil];

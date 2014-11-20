@@ -124,7 +124,7 @@
 
 }
 - (IBAction)play:(id)sender {
-    [self.player play];
+    [self.player playProgress:0];
 }
 - (IBAction)reset:(id)sender {
     AudioUnitParameterValue value = 0.f;

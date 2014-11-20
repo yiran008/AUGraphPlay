@@ -13,6 +13,8 @@
 #import "CAStreamBasicDescription.h"
 #import "CAComponentDescription.h"
 #import "CAXException.h"
+#import <QuartzCore/QuartzCore.h>
+
 @interface AUGraphPlayer : NSObject
 {
     AudioUnit mOutPut;
